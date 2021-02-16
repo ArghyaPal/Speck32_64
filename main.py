@@ -1,8 +1,6 @@
-import numpy as np
-import os
-from os import urandom
-from pickle import dump
-
+from model import *
+from utils import *
+from 
 
 def make_checkpoint(datei):
 	res = ModelCheckpoint(datei, monitor='val_loss', save_best_only = True);
