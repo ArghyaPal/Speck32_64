@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from os import urandom
 from pickle import dump
 
@@ -107,25 +108,31 @@ def convert_to_binary(arr):
 # Make train dataset
  
 def make_train_data(n, nr, diff=(0x0040,0)):
-  Y = np.frombuffer(urandom(n), dtype=np.uint8); Y = Y & 1;
-  keys = np.frombuffer(urandom(8*n),dtype=np.uint16).reshape(4,-1);
-  plain0l = np.frombuffer(urandom(2*n),dtype=np.uint16);
-  plain0r = np.frombuffer(urandom(2*n),dtype=np.uint16);
-  plain1l = plain0l ^ diff[0]; plain1r = plain0r ^ diff[1];
-  num_rand_samples = np.sum(Y==0);
-  plain1l[Y==0] = np.frombuffer(urandom(2*num_rand_samples),dtype=np.uint16);
-  plain1r[Y==0] = np.frombuffer(urandom(2*num_rand_samples),dtype=np.uint16);
-  ks = expand_key(keys, nr);
-  ctdata0l, ctdata0r = encrypt((plain0l, plain0r), ks);
-  ctdata1l, ctdata1r = encrypt((plain1l, plain1r), ks);
-  X = convert_to_binary([ctdata0l, ctdata0r, ctdata1l, ctdata1r]);#, plain0l, plain0r, plain1l, plain1r]);
-  return(X,Y);
+	Y = np.frombuffer(urandom(n), dtype=np.uint8); Y = Y & 1;
+	keys = np.frombuffer(urandom(8*n),dtype=np.uint16).reshape(4,-1);
+
+	plain0l = np.frombuffer(urandom(2*n),dtype=np.uint16);
+	plain0r = np.frombuffer(urandom(2*n),dtype=np.uint16);
+	ks = expand_key(keys, nr);
+	ctdata0l, ctdata0r = encrypt((plain0l, plain0r), ks);
+	#plain1l = plain0l ^ diff[0]; plain1r = plain0r ^ diff[1];
+	
+	num_rand_samples = np.sum(Y==0);
+	plain1l[Y==0] = np.frombuffer(urandom(2*num_rand_samples),dtype=np.uint16);
+	plain1r[Y==0] = np.frombuffer(urandom(2*num_rand_samples),dtype=np.uint16);
+	ctdata1l, ctdata1r = plain1l, plain1r #encrypt((plain1l, plain1r), ks);
+	
+	X = convert_to_binary([ctdata0l, ctdata0r, ctdata1l, ctdata1r]);#, plain0l, plain0r, plain1l, plain1r]);
+	
+	return(X,Y);
 
   
   
 # Make classifier
   
-def make_resnet(num_blocks, num_filters, num_outputs, d1, d2, word_size, ks, depth, reg_param, final_activation):
+def make_resnet(num_blocks, num_filters, num_outputs, 
+		d1, d2, word_size, ks, depth, reg_param, 
+		final_activation):
   #Input and preprocessing layers
   inp = Input(shape=(num_blocks * word_size * 2,));
   rs = Reshape((2 * num_blocks, word_size))(inp);
@@ -163,26 +170,23 @@ def make_resnet(num_blocks, num_filters, num_outputs, d1, d2, word_size, ks, dep
   return(model, encoder);
   
 
-
-# Dataset storing
-
-wdir = '/home/student/arghya/speck_32_64/1_expts/r8/model/'
-
 def make_checkpoint(datei):
   res = ModelCheckpoint(datei, monitor='val_loss', save_best_only = True);
   return(res);
 
 
-  
-bs = 5000;
-
 def cyclic_lr(num_epochs, high_lr, low_lr):
   res = lambda i: low_lr + ((num_epochs-1) - i % num_epochs)/(num_epochs-1) * (high_lr - low_lr);
   return(res);
 
-def train_speck_distinguisher(num_epochs, num_rounds, depth, num_blocks, num_filters, num_outputs, d1, d2, word_size, ks, reg_param, final_activation):
+def train_speck_distinguisher(num_epochs, num_rounds, depth, num_blocks, 
+			      num_filters, num_outputs, d1, d2, 
+			      word_size, ks, reg_param, final_activation,
+			     wdir, bs):
     #create the network
-    net, encoder = make_resnet(num_blocks, num_filters, num_outputs, d1, d2, word_size, ks, depth, reg_param, final_activation);
+    net, encoder = make_resnet(num_blocks, num_filters, num_outputs, d1, 
+			       d2, word_size, ks, depth, reg_param, 
+			       final_activation);
     net.compile(optimizer='adam',loss='mse',metrics=['acc']);
     #generate training and validation data
     X, Y = make_train_data(10**7,num_rounds);
@@ -239,7 +243,7 @@ if __name__ == "__main__":
 
 	# All training variables
 	num_epochs = 200
-	
+	batch_size = 500
 	num_rounds = 8
 	depth = 10
 	
@@ -264,15 +268,20 @@ if __name__ == "__main__":
 	# Welcome message
 	print("Training vanilla speck for Round %d" % num_rounds)
 	
+	# Dataset storing
+	wdir = os.getcwd() + '/model/'
         
         # Output from the network
-	net, encoder, h, X, Y = train_speck_distinguisher(num_epochs, num_rounds, depth, num_blocks, num_filters, num_outputs, d1, d2, word_size, ks, reg_param, final_activation);
+	net, encoder, h, X, Y = train_speck_distinguisher(num_epochs, num_rounds, depth, num_blocks, 
+							  num_filters, num_outputs, d1, d2, 
+							  word_size, ks, reg_param, final_activation,
+							 wdir, batch_size);
 	# Perform t-SNE
-	x_train_predict = encoder.predict(X[:n_predict])
-	print("Performing t-SNE dimensionality reduction of Round %d..."% num_rounds)
-	x_train_encoded = TSNE(n_components=3).fit_transform(x_train_predict)
-	print("Done.")
+	#x_train_predict = encoder.predict(X[:n_predict])
+	#print("Performing t-SNE dimensionality reduction of Round %d..."% num_rounds)
+	#x_train_encoded = TSNE(n_components=3).fit_transform(x_train_predict)
+	#print("Done.")
 
 	# Visualize result.
-	vis_data(x_train_encoded, Y, vis_dim, n_predict, n_train, build_anim=True) 
+	#vis_data(x_train_encoded, Y, vis_dim, n_predict, n_train, build_anim=True) 
   
