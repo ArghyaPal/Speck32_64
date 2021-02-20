@@ -17,8 +17,13 @@ from keras.layers import Dense, Conv1D, Input, Reshape, Permute, Add, Flatten, B
 from keras import backend as K
 from keras.regularizers import l2
 
-
-# Essential Definitions
+import tensorflow as tf
+from tensorflow.compat.v1.keras.backend import set_session
+config = tf.compat.v1.ConfigProto()
+config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
+config.log_device_placement = True  # to log device placement (on which device the operation ran)
+sess = tf.compat.v1.Session(config=config)
+set_session(sess)
 
 def WORD_SIZE():
     return(16);
@@ -61,6 +66,10 @@ def dec_one_round(c,k):
     c0 = rol(c0, ALPHA());
     return(c0, c1);
 
+
+
+
+
 def expand_key(k, t):
     ks = [0 for i in range(t)];
     ks[0] = k[len(k)-1];
@@ -68,6 +77,9 @@ def expand_key(k, t):
     for i in range(t-1):
         l[i%3], ks[i+1] = enc_one_round((l[i%3], ks[i]), i);
     return(ks);
+
+
+
 
 def encrypt(p, ks):
     x, y = p[0], p[1];
@@ -95,47 +107,38 @@ def check_testvector():
 
 
 def convert_to_binary(arr):
-  X = np.zeros((4 * WORD_SIZE(),len(arr[0])),dtype=np.uint8);
-  for i in range(4 * WORD_SIZE()):
+  X = np.zeros((2 * WORD_SIZE(),len(arr[0])),dtype=np.uint8);
+  for i in range(2 * WORD_SIZE()):
     index = i // WORD_SIZE();
     offset = WORD_SIZE() - (i % WORD_SIZE()) - 1;
     X[i] = (arr[index] >> offset) & 1;
   X = X.transpose();
   return(X);
   
-  
  
 # Make train dataset
  
 def make_train_data(n, nr, diff=(0x0040,0)):
-	Y = np.frombuffer(urandom(n), dtype=np.uint8); Y = Y & 1;
+	Y = np.frombuffer(urandom(n), dtype=np.uint8); 
+	Y = Y & 1;
 	keys = np.frombuffer(urandom(8*n),dtype=np.uint16).reshape(4,-1);
-
 	plain0l = np.frombuffer(urandom(2*n),dtype=np.uint16);
 	plain0r = np.frombuffer(urandom(2*n),dtype=np.uint16);
 	ks = expand_key(keys, nr);
 	ctdata0l, ctdata0r = encrypt((plain0l, plain0r), ks);
-	#plain1l = plain0l ^ diff[0]; plain1r = plain0r ^ diff[1];
-	
-	num_rand_samples = np.sum(Y==0);
-	plain1l[Y==0] = np.frombuffer(urandom(2*num_rand_samples),dtype=np.uint16);
-	plain1r[Y==0] = np.frombuffer(urandom(2*num_rand_samples),dtype=np.uint16);
-	ctdata1l, ctdata1r = plain1l, plain1r #encrypt((plain1l, plain1r), ks);
-	
-	X = convert_to_binary([ctdata0l, ctdata0r, ctdata1l, ctdata1r]);#, plain0l, plain0r, plain1l, plain1r]);
-	
+	ctdata0l[Y==0] = plain0l[Y==0]
+	ctdata0r[Y==0] = plain0r[Y==0]
+	X = convert_to_binary([ctdata0l, ctdata0r]);
 	return(X,Y);
 
-  
-  
 # Make classifier
   
 def make_resnet(num_blocks, num_filters, num_outputs, 
 		d1, d2, word_size, ks, depth, reg_param, 
 		final_activation):
   #Input and preprocessing layers
-  inp = Input(shape=(num_blocks * word_size * 2,));
-  rs = Reshape((2 * num_blocks, word_size))(inp);
+  inp = Input(shape=(num_blocks * word_size,));#* 2,));
+  rs = Reshape((num_blocks, word_size))(inp);#2 * num_blocks, word_size))(inp);
   perm = Permute((2,1))(rs);
   
   #add a single residual layer that will expand the data to num_filters channels
@@ -154,9 +157,9 @@ def make_resnet(num_blocks, num_filters, num_outputs,
     encoding = Activation('relu')(encoding);
     shortcut = Add()([shortcut, encoding]);
   #add prediction head
-  encoding = Flatten()(shortcut);
+  flat = Flatten()(shortcut);
   # Dense layers
-  dense1 = Dense(d1,kernel_regularizer=l2(reg_param))(encoding);
+  dense1 = Dense(d1,kernel_regularizer=l2(reg_param))(flat);
   dense1 = BatchNormalization()(dense1);
   dense1 = Activation('relu')(dense1);
   dense2 = Dense(d2, kernel_regularizer=l2(reg_param))(dense1);
@@ -166,7 +169,8 @@ def make_resnet(num_blocks, num_filters, num_outputs,
   
   # Creating models
   model = Model(inputs=inp, outputs=out);
-  encoder = Model(inputs=inp, outputs=encoding);  
+  encoder = Model(inputs=inp, outputs=encoding);
+  
   return(model, encoder);
   
 
@@ -189,8 +193,8 @@ def train_speck_distinguisher(num_epochs, num_rounds, depth, num_blocks,
 			       final_activation);
     net.compile(optimizer='adam',loss='mse',metrics=['acc']);
     #generate training and validation data
-    X, Y = make_train_data(10**7,num_rounds);
-    X_eval, Y_eval = make_train_data(10**6, num_rounds);
+    X, Y = make_train_data(10,num_rounds);
+    X_eval, Y_eval = make_train_data(10, num_rounds);
     #set up model checkpoint
     check = make_checkpoint(wdir+'best'+str(num_rounds)+'depth'+str(depth)+'.h5');
     #create learnrate schedule
@@ -242,8 +246,8 @@ def vis_data(x_train_encoded, y_train, vis_dim, n_predict, n_train, build_anim):
 if __name__ == "__main__":
 
 	# All training variables
-	num_epochs = 200
-	batch_size = 500
+	num_epochs = 5
+	batch_size = 5
 	num_rounds = 8
 	depth = 10
 	
@@ -270,12 +274,19 @@ if __name__ == "__main__":
 	
 	# Dataset storing
 	wdir = os.getcwd() + '/model/'
+	print(wdir)
         
         # Output from the network
 	net, encoder, h, X, Y = train_speck_distinguisher(num_epochs, num_rounds, depth, num_blocks, 
 							  num_filters, num_outputs, d1, d2, 
 							  word_size, ks, reg_param, final_activation,
 							 wdir, batch_size);
+	encoder.save_weights(wdir + "encoder_save_weight.h5")
+	net.save_weights(wdir + "net_save_weight.h5")
+	
+	encoder.save(wdir + "encoder_save.h5")
+	net.save(wdir + "net_save.h5")
+	
 	# Perform t-SNE
 	#x_train_predict = encoder.predict(X[:n_predict])
 	#print("Performing t-SNE dimensionality reduction of Round %d..."% num_rounds)
@@ -283,5 +294,4 @@ if __name__ == "__main__":
 	#print("Done.")
 
 	# Visualize result.
-	#vis_data(x_train_encoded, Y, vis_dim, n_predict, n_train, build_anim=True) 
-  
+	#vis_data(x_train_encoded, Y, vis_dim, n_predict, n_train, build_anim=True)
