@@ -66,10 +66,6 @@ def dec_one_round(c,k):
     c0 = rol(c0, ALPHA());
     return(c0, c1);
 
-
-
-
-
 def expand_key(k, t):
     ks = [0 for i in range(t)];
     ks[0] = k[len(k)-1];
@@ -77,9 +73,6 @@ def expand_key(k, t):
     for i in range(t-1):
         l[i%3], ks[i+1] = enc_one_round((l[i%3], ks[i]), i);
     return(ks);
-
-
-
 
 def encrypt(p, ks):
     x, y = p[0], p[1];
@@ -119,7 +112,8 @@ def convert_to_binary(arr):
 # Make train dataset
  
 def make_train_data(n, nr, diff=(0x0040,0)):
-	Y = np.frombuffer(urandom(n), dtype=np.uint8); 
+	Y[:int(n/2)] = 1;
+	Y[int(n/2):] = 0;
 	Y = Y & 1;
 	keys = np.frombuffer(urandom(8*n),dtype=np.uint16).reshape(4,-1);
 	plain0l = np.frombuffer(urandom(2*n),dtype=np.uint16);
@@ -129,7 +123,7 @@ def make_train_data(n, nr, diff=(0x0040,0)):
 	ctdata0l[Y==0] = plain0l[Y==0]
 	ctdata0r[Y==0] = plain0r[Y==0]
 	X = convert_to_binary([ctdata0l, ctdata0r]);
-	return(X,Y);
+	return(X, Y);
 
 # Make classifier
   
