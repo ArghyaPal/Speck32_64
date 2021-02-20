@@ -186,15 +186,15 @@ def cyclic_lr(num_epochs, high_lr, low_lr):
 def train_speck_distinguisher(num_epochs, num_rounds, depth, num_blocks, 
 			      num_filters, num_outputs, d1, d2, 
 			      word_size, ks, reg_param, final_activation,
-			     wdir, bs):
+			     wdir, bs, num_train_data, num_val_data):
     #create the network
     net, encoder = make_resnet(num_blocks, num_filters, num_outputs, d1, 
 			       d2, word_size, ks, depth, reg_param, 
 			       final_activation);
     net.compile(optimizer='adam',loss='mse',metrics=['acc']);
     #generate training and validation data
-    X, Y = make_train_data(10,num_rounds);
-    X_eval, Y_eval = make_train_data(10, num_rounds);
+    X, Y = make_train_data(num_train_data,num_rounds);
+    X_eval, Y_eval = make_train_data(num_val_data, num_rounds);
     #set up model checkpoint
     check = make_checkpoint(wdir+'best'+str(num_rounds)+'depth'+str(depth)+'.h5');
     #create learnrate schedule
@@ -250,6 +250,8 @@ if __name__ == "__main__":
 	batch_size = 5
 	num_rounds = 8
 	depth = 10
+	num_train_data = 10**7
+	num_val_data = 10**6
 	
 	num_blocks=2
 	num_filters=32
@@ -280,7 +282,7 @@ if __name__ == "__main__":
 	net, encoder, h, X, Y = train_speck_distinguisher(num_epochs, num_rounds, depth, num_blocks, 
 							  num_filters, num_outputs, d1, d2, 
 							  word_size, ks, reg_param, final_activation,
-							 wdir, batch_size);
+							 wdir, batch_size, num_train_data, num_val_data);
 	encoder.save_weights(wdir + "encoder_save_weight.h5")
 	net.save_weights(wdir + "net_save_weight.h5")
 	
