@@ -18,12 +18,19 @@ from keras import backend as K
 from keras.regularizers import l2
 
 import tensorflow as tf
+
+import random as python_random
+np.random.seed(123)
+python_random.seed(123)
+tf.random.set_seed(123)
+
 from tensorflow.compat.v1.keras.backend import set_session
 config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True  # dynamically grow the memory used on the GPU
 config.log_device_placement = True  # to log device placement (on which device the operation ran)
 sess = tf.compat.v1.Session(config=config)
 set_session(sess)
+
 
 def WORD_SIZE():
     return(16);
@@ -66,6 +73,10 @@ def dec_one_round(c,k):
     c0 = rol(c0, ALPHA());
     return(c0, c1);
 
+
+
+
+
 def expand_key(k, t):
     ks = [0 for i in range(t)];
     ks[0] = k[len(k)-1];
@@ -73,6 +84,9 @@ def expand_key(k, t):
     for i in range(t-1):
         l[i%3], ks[i+1] = enc_one_round((l[i%3], ks[i]), i);
     return(ks);
+
+
+
 
 def encrypt(p, ks):
     x, y = p[0], p[1];
@@ -112,17 +126,21 @@ def convert_to_binary(arr):
 # Make train dataset
  
 def make_train_data(n, nr, diff=(0x0040,0)):
+	Y = np.empty(n, dtype=  np.uint8)
 	Y[:int(n/2)] = 1;
 	Y[int(n/2):] = 0;
+	
 	Y = Y & 1;
 	keys = np.frombuffer(urandom(8*n),dtype=np.uint16).reshape(4,-1);
 	plain0l = np.frombuffer(urandom(2*n),dtype=np.uint16);
 	plain0r = np.frombuffer(urandom(2*n),dtype=np.uint16);
 	ks = expand_key(keys, nr);
 	ctdata0l, ctdata0r = encrypt((plain0l, plain0r), ks);
+	
 	ctdata0l[Y==0] = plain0l[Y==0]
 	ctdata0r[Y==0] = plain0r[Y==0]
 	X = convert_to_binary([ctdata0l, ctdata0r]);
+	
 	return(X, Y);
 
 # Make classifier
@@ -180,15 +198,15 @@ def cyclic_lr(num_epochs, high_lr, low_lr):
 def train_speck_distinguisher(num_epochs, num_rounds, depth, num_blocks, 
 			      num_filters, num_outputs, d1, d2, 
 			      word_size, ks, reg_param, final_activation,
-			     wdir, bs, num_train_data, num_val_data):
+			     wdir, bs):
     #create the network
     net, encoder = make_resnet(num_blocks, num_filters, num_outputs, d1, 
 			       d2, word_size, ks, depth, reg_param, 
 			       final_activation);
     net.compile(optimizer='adam',loss='mse',metrics=['acc']);
     #generate training and validation data
-    X, Y = make_train_data(num_train_data,num_rounds);
-    X_eval, Y_eval = make_train_data(num_val_data, num_rounds);
+    X, Y = make_train_data(10,num_rounds);
+    X_eval, Y_eval = make_train_data(10, num_rounds);
     #set up model checkpoint
     check = make_checkpoint(wdir+'best'+str(num_rounds)+'depth'+str(depth)+'.h5');
     #create learnrate schedule
@@ -244,8 +262,6 @@ if __name__ == "__main__":
 	batch_size = 5
 	num_rounds = 8
 	depth = 10
-	num_train_data = 10**7
-	num_val_data = 10**6
 	
 	num_blocks=2
 	num_filters=32
@@ -276,7 +292,7 @@ if __name__ == "__main__":
 	net, encoder, h, X, Y = train_speck_distinguisher(num_epochs, num_rounds, depth, num_blocks, 
 							  num_filters, num_outputs, d1, d2, 
 							  word_size, ks, reg_param, final_activation,
-							 wdir, batch_size, num_train_data, num_val_data);
+							 wdir, batch_size);
 	encoder.save_weights(wdir + "encoder_save_weight.h5")
 	net.save_weights(wdir + "net_save_weight.h5")
 	
